@@ -31,9 +31,7 @@ def compute_hog(img, orientations, pixels_per_cell, cells_per_block, display=Fal
         return blocks, hog_image_rescaled
 
 
-def blocks_gt(pts_coord, n_blocks, pixels_per_cell, cells_per_block):
-   
-    n_blocks_row, n_blocks_col = n_blocks
+def get_blocks_bounds(n_blocks_row, n_blocks_col, pixels_per_cell, cells_per_block):
     c_row, c_col = pixels_per_cell
     b_row, b_col = cells_per_block
     
@@ -47,6 +45,11 @@ def blocks_gt(pts_coord, n_blocks, pixels_per_cell, cells_per_block):
             center_bounds.append(((row_start*c_row, (row_start + 1)*c_row), 
                                   (col_start*c_col, (col_start + 1)*c_row)))
 
+    return blocks_bounds, center_bounds
+
+
+def blocks_gt(pts_coord, center_bounds):
+
     blocks_gt = []
     for ((bx_low, bx_high), (by_low, by_high)) in center_bounds:
         found = False
@@ -57,17 +60,14 @@ def blocks_gt(pts_coord, n_blocks, pixels_per_cell, cells_per_block):
         blocks_gt.append(found)
         
     blocks_gt = np.array(blocks_gt)
-    blocks_bounds = np.array(blocks_bounds)
 
-    return blocks_gt, blocks_bounds
+    return blocks_gt
 
 
 def hog_data(filename, pixels_per_cell, cells_per_block, display=False,
-             plot_dir=None):
+             plot_dir=None, mode='predict'):
 
-    img = read_img(f'data/{filename}.jpg')
-    true = pd.read_csv(f'data/{filename}.csv')
-    pts_coords = list(true.itertuples(name=None, index=False))
+    img = read_img(f'{filename}.jpg')
 
     plot_outfile = os.path.join(plot_dir, filename + '_mask.png') if plot_dir else None
     filtered = adaptive_global_thresholding(img, display=display,
@@ -92,11 +92,19 @@ def hog_data(filename, pixels_per_cell, cells_per_block, display=False,
 
     (n_blocks_row, n_blocks_col, b_row, b_col, orientations) = blocks.shape
 
-    gt, blocks_bounds = blocks_gt(pts_coords, (n_blocks_row, n_blocks_col), 
-                                  pixels_per_cell=pixels_per_cell,
-                                  cells_per_block=cells_per_block)
+    blocks_bounds, center_bounds = get_blocks_bounds(n_blocks_row, n_blocks_col,
+                                                     pixels_per_cell, 
+                                                     cells_per_block)
+
+    if mode == 'train':
+        true = pd.read_csv(f'{filename}.csv')
+        pts_coords = list(true.itertuples(name=None, index=False))
+        gt = blocks_gt(pts_coords, center_bounds)
+    else:
+        gt = None
 
     fd = np.reshape(blocks, (n_blocks_row*n_blocks_col, b_row*b_col*orientations))
+    blocks_bounds = np.array(blocks_bounds)
 
     return img, hog_img, fd, gt, blocks_bounds
 
@@ -133,7 +141,8 @@ def create_hog_dataset(files, pixels_per_cell=(16, 16), cells_per_block=(7, 7)):
     for fn in files:
         img, hog_img, fd, gt, bb = hog_data(fn, plot_dir='plots',
                                             pixels_per_cell=pixels_per_cell,
-                                            cells_per_block=cells_per_block)
+                                            cells_per_block=cells_per_block,
+                                            mode='train')
         mask = fd.any(axis=1)
         fd = fd[mask]
         gt = gt[mask]
@@ -160,14 +169,14 @@ def select_subset(x, y):
     return x_sub, y_sub
 
 
-def predict(clf, x, block_bound, overlap_threshold):
+def predict(clf, x, blocks_bound, overlap_threshold):
     y_pred = clf.predict(x)
-    block_bound = block_bound[np.where(y_pred == 1)[0]]
+    blocks_bound = blocks_bound[np.where(y_pred == 1)[0]]
 
     # Replace blocks which overlap too much by there average
     overlapping = []
 
-    for bounds in block_bound:
+    for bounds in blocks_bound:
         pushed = False
         x1, x2 = bounds[0, :]
         y1, y2 = bounds[1, :]
@@ -186,11 +195,11 @@ def predict(clf, x, block_bound, overlap_threshold):
         if not pushed:
             overlapping.append([pt, [bounds]])
 
-    block_bound = np.array([np.mean(l, axis=0) for _, l in overlapping])
+    blocks_bound = np.array([np.mean(l, axis=0) for _, l in overlapping])
 
     # Retrieve middle point of blocks as prediction
     pred_pts = []
-    for bounds in block_bound:
+    for bounds in blocks_bound:
         x1, x2 = bounds[0, :]
         y1, y2 = bounds[1, :]
         pt = (x1 + (x2-x1) // 2), (y1 + (y2-y1) // 2)
