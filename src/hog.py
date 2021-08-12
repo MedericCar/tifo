@@ -112,11 +112,7 @@ def hog_data(filename, pixels_per_cell, cells_per_block, display=False,
 def plot_hog_data(img, hog_img, fd, bb, block_i):
     plt.figure(figsize=(20, 5))
 
-    plt.subplot(141)
-    plt.title('HOG block descriptor histogram')
-    plt.bar(np.arange(len(fd[block_i])), fd[block_i])
-
-    ax = plt.subplot(142)
+    ax = plt.subplot(141)
     plt.title('Block position')
     plt.imshow(img)
 
@@ -126,13 +122,17 @@ def plot_hog_data(img, hog_img, fd, bb, block_i):
                              facecolor='none')
     ax.add_patch(rect)
 
-    plt.subplot(143)
+    plt.subplot(142)
     plt.title('Block')
     plt.imshow(img[x1:x2, y1:y2])
 
-    plt.subplot(144)
+    plt.subplot(143)
     plt.title('Block gradients')
     plt.imshow(hog_img[x1:x2, y1:y2])
+
+    plt.subplot(144)
+    plt.title('HOG block descriptor histogram')
+    plt.bar(np.arange(len(fd[block_i])), fd[block_i])
 
 
 def create_hog_dataset(files, pixels_per_cell=(16, 16), cells_per_block=(7, 7)):
